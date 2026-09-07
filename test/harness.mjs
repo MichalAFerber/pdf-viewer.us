@@ -9,6 +9,14 @@ import { join } from "node:path";
 const ROOT = process.cwd();
 const PORT = Number(process.env.PORT) || 8099;
 
+// -- ?name= fixture: a real 549-byte PDF with a correct xref table, not bytes
+// named .pdf. openPdf() writes ?name= before pdf.js resolves, but a parse
+// failure lands in failOpen() -> clearAll(), which clears it again — so the
+// load check below genuinely requires a PDF that opens. (Confirmed by
+// control: a garbage .pdf fails that check.) This is also the first test in
+// this harness that drives the viewer with a file at all.
+const FIXTURE_PDF = join(ROOT, "test", "fixtures", "sample.pdf");
+
 const H = {};
 for (const line of readFileSync(join(ROOT, "_headers"), "utf8").split("\n")) {
   const m = line.match(/^[ \t]+([A-Za-z0-9-]+):[ \t]*(.+?)\s*$/);
@@ -82,7 +90,57 @@ check("icons in dark mode (moon shown, sun hidden)", await page.evaluate(() => {
 check("choice persists (mykk-bg)", await page.evaluate(() => { try { return localStorage.getItem("mykk-bg") === "#0d1117"; } catch (e) { return false; } }));
 await page.click("#themeToggle");
 check("toggle back to light", await page.evaluate(() => document.getElementById("bgPicker").value) === "#ffffff");
+
+// -- ?name=: loading a file reflects its name into the URL, Clear removes it
+await page.setInputFiles("#fileInput", FIXTURE_PDF);
+await page.waitForFunction(() => document.body.classList.contains("viewing"), null, { timeout: 10000 });
+check("load: URL reflects ?name=sample.pdf", await page.evaluate(() =>
+  new URLSearchParams(location.search).get("name")) === "sample.pdf");
+await page.click("#btnClear");
+check("clear: ?name= removed from the URL", await page.evaluate(() =>
+  new URLSearchParams(location.search).get("name")) === null);
 await ctx.close();
+
+// -- direct visit with ?name=: empty-state names the last-viewed file
+const p3 = await browser.newContext().then((c) => c.newPage());
+hook(p3);
+await p3.goto(`http://localhost:${PORT}/?name=${encodeURIComponent("sample.pdf")}`, { waitUntil: "load", timeout: 30000 });
+check("?name=: 'shared for' sub-line names the file", await p3.evaluate(() => {
+  const sub = document.querySelector(".empty-sub");
+  return /shared for/.test(sub.textContent) && /sample\.pdf/.test(sub.textContent);
+}));
+await p3.context().close();
+
+// -- ?name= carrying markup renders as TEXT, never parsed as HTML
+const p4 = await browser.newContext().then((c) => c.newPage());
+hook(p4);
+const HOSTILE_NAME = "<img src=x onerror=alert(1)>.pdf";
+await p4.goto(`http://localhost:${PORT}/?name=${encodeURIComponent(HOSTILE_NAME)}`, { waitUntil: "load", timeout: 30000 });
+check("?name=: hostile markup shows as literal text, never parsed", await p4.evaluate((name) => {
+  const sub = document.querySelector(".empty-sub");
+  return sub.textContent.includes(name)                 // present, verbatim
+    && sub.querySelector("img") === null                // no element was built
+    && sub.childNodes.length === 1                      // and the sub-line is
+    && sub.childNodes[0].nodeType === 3;                // exactly one text node
+}, HOSTILE_NAME));
+await p4.context().close();
+
+// -- ?name= with a quote payload: asserted for ENCODING FIDELITY, not for
+// attribute escaping. This sink is textContent and the name never lands in
+// attribute position, so a quote cannot open an attribute here no matter how
+// the value is handled — a test claiming otherwise passes unconditionally and
+// was removed rather than shipped (it passed against a raw innerHTML sink).
+// What this DOES catch is a naive escaper added upstream: any repo that starts
+// pre-escaping the name would show a literal &quot; here and fail.
+const QUOTE_NAME = 'a" b\' c & d.pdf';
+const p5 = await browser.newContext().then((c) => c.newPage());
+hook(p5);
+await p5.goto(`http://localhost:${PORT}/?name=${encodeURIComponent(QUOTE_NAME)}`, { waitUntil: "load", timeout: 30000 });
+check("?name=: quotes and ampersands survive verbatim as text", await p5.evaluate((name) => {
+  const sub = document.querySelector(".empty-sub");
+  return sub.textContent.includes(name);
+}, QUOTE_NAME));
+await p5.context().close();
 
 // -- fresh context with dark system scheme: must default dark
 const ctx2 = await browser.newContext({ colorScheme: "dark" });
