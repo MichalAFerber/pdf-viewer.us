@@ -403,11 +403,12 @@
 </main>
 
 <footer class="footer" id="footer">
-  <p>&copy; 2026 | Created with &#10084;&#65039; by <a href="https://michalferber.dev" target="_blank" rel="noopener noreferrer">Michal Ferber</a>, aka <a href="https://techguywithabeard.com" target="_blank" rel="noopener noreferrer">TechGuyWithABeard</a></p>
+  <p>&copy; <span id="footer-year">2026</span> | Created with &#10084;&#65039; by <a href="https://michalferber.dev/" target="_blank" rel="noopener">Michal Ferber</a>, aka <a href="https://techguywithabeard.com/" target="_blank" rel="noopener">TechGuyWithABeard</a>.</p>
   <button id="btnFooterClose" class="footer-close" type="button" data-tip="Hide footer" data-tip-up aria-label="Hide footer">
     <svg viewBox="0 0 24 24" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
   </button>
 </footer>
+<script>document.getElementById('footer-year').textContent = new Date().getFullYear();</script>
 
 <div id="pageNav" class="toolbar" role="toolbar" aria-label="Page and zoom controls" hidden>
   <div class="tgroup">
